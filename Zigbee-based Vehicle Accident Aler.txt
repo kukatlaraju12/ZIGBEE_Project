@@ -1,0 +1,108 @@
+/// Zigbee-based Vehicle Accident Alert System Code
+
+#include <SoftwareSerial.h>
+#include <LiquidCrystal.h>
+
+const int rs = 13, en = 12, d4 = 11, d5 = 10, d6 = 9, d7 = 8;
+LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
+
+// SoftwareSerial for HC-12 Communication
+//SoftwareSerial myserial(2, 3); 
+
+// SoftwareSerial for GPS Module
+SoftwareSerial gps(7, 6);
+
+int tilt = A0;
+unsigned long previousMillis = 0;
+const long sensorInterval = 5000; // Read sensors every 300ms
+
+String latitude = "17.729922510455822";
+String longitude = "79.19878222308927";
+
+void scrollText(String text) {
+  text = "                " + text + " ";
+  int textLength = text.length();
+  for (int i = 0; i < textLength + 16; i++) {
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print(text.substring(i, i + 16));
+    delay(150);
+  }
+}
+
+void setup() {
+  pinMode(tilt, INPUT);
+  Serial.begin(9600);
+  //myserial.begin(9600);
+  gps.begin(9600);
+  lcd.begin(16, 2);
+  
+  lcd.print("VEHICLE TO VEHICLE");
+  lcd.setCursor(0, 1);
+  lcd.print("COMMUNICATION");
+  delay(2000);
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+
+  // Non-blocking sensor reading
+  if (currentMillis - previousMillis >= sensorInterval) {
+    previousMillis = currentMillis;
+    getGPSData();  // Update GPS coordinates periodically
+  }
+
+  // Check for incoming HC-12 data
+ if (Serial.available()) {
+    String message = Serial.readString();
+   // Serial.println("Received: " + message);
+    lcd.clear();
+    scrollText(message);
+  }
+
+  // Accident detection
+  if (digitalRead(tilt) == LOW) {
+    lcd.clear();
+    lcd.print("ACCIDENT DETECTED");
+    Serial.println("ALERT: VEHICLE ACCIDENT");
+    
+    String accidentMessage = "ALERT: VEHICLE ACCIDENT\n";
+    accidentMessage += "Location: https://maps.google.com/?q=" + latitude + "," + longitude;
+
+    Serial.println(accidentMessage);
+  //  myserial.println(accidentMessage);
+
+    delay(5000);  // Avoid repeated messages
+  }
+}
+
+void getGPSData() {
+  while (gps.available()) {
+    String gpsData = gps.readStringUntil('\n');
+    
+    if (gpsData.startsWith("$GPGGA")) {  // Look for GPGGA sentences
+      String data[15];
+      int index = 0;
+
+      for (int i = 0; i < gpsData.length(); i++) {
+        if (gpsData[i] == ',') index++;
+        else data[index] += gpsData[i];
+      }
+
+      if (data[2] != "" && data[4] != "") {  // If valid coordinates
+        latitude = convertToDecimal(data[2]);
+        longitude = convertToDecimal(data[4]);
+      }
+    }
+  }
+}
+
+String convertToDecimal(String nmea) {
+  if (nmea.length() < 6) return "0.000000";  // Return default if invalid
+  
+  String degrees = nmea.substring(0, 2);
+  String minutes = nmea.substring(2);
+  float decimal = degrees.toInt() + (minutes.toFloat() / 60.0);
+  
+  return String(decimal, 6);  // Return 6 decimal places
+}
